@@ -22,18 +22,17 @@ npm run build
 
 This type-checks the code and writes the production site to `dist/`.
 
-## Deploy to Cloudflare Pages
+## Deploy to Cloudflare
 
-In the Cloudflare dashboard, go to **Workers & Pages → Create → Pages → Connect to Git** and pick the `defog` repo. Then use:
+The site is served by a Cloudflare Worker with static assets (`wrangler.jsonc`), named `defog`. It has no server code: it serves `dist/`, and any unknown path gets `index.html` so client-side routes work.
 
-| Setting | Value |
-| --- | --- |
-| Root directory | `frontend` |
-| Build command | `npm run build` |
-| Build output directory | `dist` |
-| Environment variable | `VITE_API_URL` = your backend's public address |
+From the `frontend` folder, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set:
 
-Once it's deployed, add `defog.fit` under the project's **Custom domains**.
+```bash
+VITE_API_URL=https://api.defog.fit npm run deploy
+```
+
+`VITE_API_URL` is baked in at build time, so set it to your backend's public address every time you deploy. The Worker is live at https://defog.defog-frontend.workers.dev. To serve it at `defog.fit`, add the domain under the Worker's **Settings → Domains & Routes** in the Cloudflare dashboard (this replaces the domain's current A record).
 
 ## Layout
 

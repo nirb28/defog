@@ -1,0 +1,15 @@
+{
+  // Cloudflare Worker that serves the built web app (static assets only, no server code).
+  // Deploy with: npm run deploy   (needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID)
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "defog",
+  "compatibility_date": "2026-11-02",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "./dist",
+    // Client-side routing: unknown paths get index.html.
+    "not_found_handling": "single-page-application"
+  }
+}

@@ -4,7 +4,7 @@ An AI study assistant for students. Students sign up (with a form or with Google
 
 | Folder | What it is | Stack | Hosting |
 | --- | --- | --- | --- |
-| `frontend/` | Web app | React, Vite, TypeScript | Cloudflare Pages (defog.fit) |
+| `frontend/` | Web app | React, Vite, TypeScript | Cloudflare Workers static assets (defog.fit) |
 | `backend/` | API: accounts, Canvas and Calendar sync, chatbot | Python, FastAPI | Any Python host (e.g. Render) |
 | (Supabase) | Database | Postgres | Supabase |
 
