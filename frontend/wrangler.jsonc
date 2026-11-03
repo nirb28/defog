@@ -1,15 +1,23 @@
 {
-  // Cloudflare Worker that serves the built web app (static assets only, no server code).
+  // Cloudflare Worker that serves the built web app and forwards /api/* to the backend.
   // Deploy with: npm run deploy   (needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID)
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "defog",
+  "main": "worker/index.js",
   "compatibility_date": "2026-11-02",
   "observability": {
     "enabled": true
   },
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     // Client-side routing: unknown paths get index.html.
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // Everything else is a static file; only API calls run the script.
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    // The Cloud Run service URL printed by backend/deploy/cloudrun.sh.
+    "BACKEND_URL": ""
   }
 }

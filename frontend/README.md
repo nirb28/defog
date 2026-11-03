@@ -24,15 +24,17 @@ This type-checks the code and writes the production site to `dist/`.
 
 ## Deploy to Cloudflare
 
-The site is served by a Cloudflare Worker with static assets (`wrangler.jsonc`), named `defog`. It has no server code: it serves `dist/`, and any unknown path gets `index.html` so client-side routes work.
+The site is a Cloudflare Worker named `defog` (`wrangler.jsonc`). It serves `dist/` (unknown paths get `index.html`, so client-side routes work), and `worker/index.js` forwards every `/api/*` request to the backend on Cloud Run. The browser only ever talks to one site, so the session cookie is first-party and no CORS is needed. Leave `VITE_API_URL` empty.
 
-From the `frontend` folder, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set:
+1. Deploy the backend first (`../backend/README.md`, "Deploy").
+2. Put the Cloud Run URL it prints in `wrangler.jsonc` as `BACKEND_URL`.
+3. From the `frontend` folder, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set:
 
-```bash
-VITE_API_URL=https://api.defog.fit npm run deploy
-```
+   ```bash
+   npm run deploy
+   ```
 
-`VITE_API_URL` is baked in at build time, so set it to your backend's public address every time you deploy. The Worker is live at https://defog.defog-frontend.workers.dev. To serve it at `defog.fit`, add the domain under the Worker's **Settings → Domains & Routes** in the Cloudflare dashboard (this replaces the domain's current A record).
+The Worker is live at https://defog.defog-frontend.workers.dev. To serve it at `defog.fit`, add the domain under the Worker's **Settings → Domains & Routes** in the Cloudflare dashboard (this replaces the domain's current A record). `APP_URL` in `../backend/deploy/cloudrun.env.yaml` must match the address students use.
 
 ## Layout
 
@@ -48,6 +50,8 @@ src/
   forms.tsx        shared form fields (time zone, year, school)
   Markdown.tsx     Markdown + math rendering (loaded only after the first answer)
   styles.css       colours, type and layout, with light and dark themes
+worker/
+  index.js         Cloudflare Worker: serves the site, forwards /api/* to the backend
 ```
 
 The session lives in an HttpOnly cookie set by the API. If the API runs on its own subdomain (e.g. `api.defog.fit`), it must be on the same site as the web app (`defog.fit`) so the browser sends that cookie.

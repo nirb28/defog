@@ -4,8 +4,8 @@ An AI study assistant for students. Students sign up (with a form or with Google
 
 | Folder | What it is | Stack | Hosting |
 | --- | --- | --- | --- |
-| `frontend/` | Web app | React, Vite, TypeScript | Cloudflare Workers static assets (defog.fit) |
-| `backend/` | API: accounts, Canvas and Calendar sync, chatbot | Python, FastAPI | Any Python host (e.g. Render) |
+| `frontend/` | Web app | React, Vite, TypeScript | Cloudflare Workers (defog.fit), which also forwards `/api` to the backend |
+| `backend/` | API: accounts, Canvas and Calendar sync, chatbot | Python, FastAPI | Google Cloud Run |
 | (Supabase) | Database | Postgres | Supabase |
 
 The browser never sees an API key or a Canvas or Google token: the web app calls the backend, and only the backend talks to the AI model, Canvas and Google.

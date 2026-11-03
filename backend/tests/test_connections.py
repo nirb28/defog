@@ -512,3 +512,59 @@ def test_server_starts_with_background_sync(monkeypatch):
 
     asyncio.run(run())
     assert len(calls) >= 2  # the loop ran repeatedly and stopped cleanly on shutdown
+
+
+SYNC_SECRET = "scheduler-secret-scheduler-secret-scheduler"
+
+
+def test_scheduled_sync_endpoint_is_off_without_a_secret(client):
+    assert client.post("/api/internal/sync").status_code == 404
+    assert (
+        client.post("/api/internal/sync", headers={"X-Sync-Secret": "anything"}).status_code == 404
+    )
+
+
+def test_scheduled_sync_endpoint_rejects_a_wrong_secret(client, monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(main.settings, "sync_trigger_secret", SYNC_SECRET)
+    assert client.post("/api/internal/sync").status_code == 403
+    assert client.post("/api/internal/sync", headers={"X-Sync-Secret": "wrong"}).status_code == 403
+
+
+def test_scheduled_sync_endpoint_syncs_due_connections(student, internet, db, monkeypatch):
+    from app import main
+    from app.models import LoginFailure
+
+    monkeypatch.setattr(main.settings, "sync_trigger_secret", SYNC_SECRET)
+    sample_canvas(internet.canvas, utcnow())
+    connect_canvas(student, internet)
+    db.execute(update(Connection).values(last_synced_at=utcnow() - timedelta(hours=2)))
+    db.add(LoginFailure(email="x@y.edu", created_at=utcnow() - timedelta(days=2)))
+    db.commit()
+
+    # A scheduler calls with no cookie or CSRF token, only the shared secret.
+    res = new_client().post("/api/internal/sync", headers={"X-Sync-Secret": SYNC_SECRET})
+    assert res.status_code == 200, res.text
+    assert res.json() == {"synced": 1, "skipped": 0, "failed": 0}
+    db.expire_all()
+    assert db.scalar(select(Connection.last_synced_at)) > utcnow() - timedelta(minutes=1)
+    assert db.scalar(select(func.count()).select_from(LoginFailure)) == 0
+
+
+def test_sync_pass_carries_on_after_one_connection_fails(monkeypatch):
+    import uuid
+
+    from app import main
+    from app.connections.sync import SyncResult
+
+    ids = [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()]
+
+    def fake_sync(connection_id):
+        if connection_id == ids[0]:
+            raise RuntimeError("boom")
+        return SyncResult(ok=True)
+
+    monkeypatch.setattr(main, "due_connection_ids", lambda: ids)
+    monkeypatch.setattr(main, "sync_connection", fake_sync)
+    assert main.run_sync_pass() == {"synced": 2, "skipped": 0, "failed": 1}

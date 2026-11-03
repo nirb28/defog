@@ -76,19 +76,43 @@ python -m pytest
 
 To use a different database, set `TEST_DATABASE_URL`. The tests never use the real internet or your `.env`: Canvas, Google and the breached-password service are replaced with in-memory fakes.
 
-## Deploy
+## Deploy (Google Cloud Run)
 
-1. Set the environment variables from `.env.example` on your host, with `ENVIRONMENT=production`, `https://` values for `APP_URL` and `API_URL`, real `SECRET_KEY` and `TOKEN_ENCRYPTION_KEY` values, `EMAIL_BACKEND=smtp` and SMTP settings. In production the server refuses to start without these.
-2. Run `alembic upgrade head` against Supabase.
-3. Start the server with `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. One worker is enough at launch. The background sync loop runs inside the server process.
+`deploy/cloudrun.sh` builds the image from `Dockerfile`, runs the migrations, deploys the API to Cloud Run and sets up the scheduled sync. Re-run it to ship an update. Run it in [Google Cloud Shell](https://shell.cloud.google.com), which already has `gcloud`:
 
-Keep `TOKEN_ENCRYPTION_KEY` safe and unchanged. If it changes, stored Canvas and Google tokens can't be read, and every student has to reconnect.
+1. Create a Google Cloud project and turn on billing for it. Cloud Run needs billing even when usage stays inside the free tier.
+2. In Cloud Shell, clone the repo, pick the project, and run the script with your Supabase **Session pooler** connection string:
+
+   ```bash
+   git clone https://github.com/nirb28/defog.git && cd defog/backend
+   gcloud config set project YOUR_PROJECT_ID
+   DATABASE_URL='postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres' bash deploy/cloudrun.sh
+   ```
+
+   Set `REGION` to a Cloud Run region near your Supabase region (default `us-central1`). Each request makes several database queries, so distance adds up.
+3. The script prints the service URL. Put it in `frontend/wrangler.jsonc` as `BACKEND_URL` and redeploy the frontend.
+
+What it sets up:
+
+- **Secrets** go to Secret Manager, never into the image or this repo. `SECRET_KEY`, `TOKEN_ENCRYPTION_KEY` and `SYNC_TRIGGER_SECRET` are generated on the first run and then kept. Keep `TOKEN_ENCRYPTION_KEY` unchanged: if it changes, stored Canvas and Google tokens can't be read and every student has to reconnect. Pass `ANTHROPIC_API_KEY`, `SMTP_PASSWORD`, `GOOGLE_CLIENT_SECRET`, `OPENAI_API_KEY` or `CANVAS_OAUTH_CLIENTS` as variables to store them; later runs keep them.
+- **Other settings** come from `deploy/cloudrun.env.yaml` (AI provider, email, Google client ID). Edit it and re-run the script.
+- **The service** scales to zero when idle and runs at most 2 instances. `BACKGROUND_SYNC_ENABLED` is off, because Cloud Run pauses idle servers. Instead, **Cloud Scheduler** calls `POST /api/internal/sync` every 15 minutes with the `X-Sync-Secret` header. That endpoint is off unless `SYNC_TRIGGER_SECRET` is set.
+- **Migrations** run as the Cloud Run job `defog-migrate` before each deploy.
+
+The web app's Cloudflare Worker forwards `/api/*` to Cloud Run, so `API_URL` is the same address as `APP_URL`. Google OAuth redirect URIs are then `https://defog.fit/api/auth/google/callback` and `https://defog.fit/api/connections/google-calendar/callback`.
+
+Before real students sign up, set `EMAIL_BACKEND: "smtp"` and the SMTP settings. With `console`, confirmation links only appear in the Cloud Run logs.
+
+### Other hosts
+
+The `Dockerfile` runs anywhere Docker does. Set the variables from `.env.example` with `ENVIRONMENT=production`, `https://` values for `APP_URL` and `API_URL`, and real `SECRET_KEY` and `TOKEN_ENCRYPTION_KEY` values. Run `alembic upgrade head`, then start the container. On a host that keeps the server running, leave `BACKGROUND_SYNC_ENABLED=true` and skip the scheduler.
 
 ## Endpoints
 
 | Method | Path | What it does |
 | --- | --- | --- |
 | GET | `/api/health` | Server is up; shows the AI provider |
+| POST | `/api/internal/sync` | One sync pass, for a scheduler (needs `X-Sync-Secret`) |
 | GET | `/api/auth/options` | Whether Google sign-in is available |
 | POST | `/api/auth/register` | Sign up with the form (sends a confirmation email) |
 | POST | `/api/auth/verify-email` | Confirm the email from the emailed link |
