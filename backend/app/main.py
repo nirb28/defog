@@ -1,11 +1,12 @@
 """Defog API entry point. Run locally with: uvicorn app.main:app --reload"""
 
 import asyncio
+import hmac
 import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import delete, or_
 
@@ -42,13 +43,34 @@ def purge_expired() -> None:
         db.commit()
 
 
+def run_sync_pass() -> dict[str, int]:
+    """Sync every connection that's due, then clear out expired records. Blocking.
+
+    One connection failing doesn't stop the others; it's retried on the next pass.
+    """
+    counts = {"synced": 0, "skipped": 0, "failed": 0}
+    for connection_id in due_connection_ids():
+        try:
+            result = sync_connection(connection_id)
+        except Exception:  # noqa: BLE001 - log it and carry on with the rest
+            log.exception("Sync of connection %s failed", connection_id)
+            counts["failed"] += 1
+            continue
+        if result.skipped:
+            counts["skipped"] += 1
+        elif result.ok:
+            counts["synced"] += 1
+        else:
+            counts["failed"] += 1
+    purge_expired()
+    return counts
+
+
 async def sync_loop() -> None:
     """Keep every connection fresh (every SYNC_INTERVAL_MINUTES) and retry failed syncs."""
     while True:
         try:
-            for connection_id in await asyncio.to_thread(due_connection_ids):
-                await asyncio.to_thread(sync_connection, connection_id)
-            await asyncio.to_thread(purge_expired)
+            await asyncio.to_thread(run_sync_pass)
         except Exception:  # noqa: BLE001 - keep the loop alive; the next pass retries
             log.exception("Background sync pass failed")
         await asyncio.sleep(SYNC_LOOP_SECONDS)
@@ -92,3 +114,20 @@ app.include_router(chat_router)
 @app.get("/api/health", response_model=HealthResponse)
 def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
     return HealthResponse(status="ok", provider=settings.llm_provider)
+
+
+@app.post("/api/internal/sync", include_in_schema=False)
+def scheduled_sync(
+    x_sync_secret: str | None = Header(default=None),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, int]:
+    """One sync pass, for a scheduler (e.g. Cloud Scheduler) on hosts that pause idle servers.
+
+    Off unless SYNC_TRIGGER_SECRET is set; the caller must send it in X-Sync-Secret.
+    """
+    secret = settings.sync_trigger_secret
+    if not secret:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not x_sync_secret or not hmac.compare_digest(x_sync_secret.encode(), secret.encode()):
+        raise HTTPException(status_code=403, detail="Invalid sync secret.")
+    return run_sync_pass()

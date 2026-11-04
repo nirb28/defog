@@ -135,6 +135,15 @@ def test_production_refuses_weak_settings():
         api_url="https://api.defog.fit/",
     )
     assert ok.cookie_secure and ok.api_url == "https://api.defog.fit"
+    with pytest.raises(ValueError, match="SYNC_TRIGGER_SECRET"):
+        Settings(
+            environment="production",
+            secret_key="x" * 40,
+            token_encryption_key="y" * 44,
+            sync_trigger_secret="short",
+            app_url="https://defog.fit",
+            api_url="https://api.defog.fit",
+        )
 
 
 def test_canvas_clients_setting_parses_json():

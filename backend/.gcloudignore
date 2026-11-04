@@ -1,0 +1,12 @@
+# Files Cloud Build should not receive (gcloud builds submit). Secrets never leave your machine.
+.gcloudignore
+.git
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/

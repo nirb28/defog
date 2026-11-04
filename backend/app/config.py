@@ -76,7 +76,12 @@ class Settings(BaseSettings):
     canvas_allowed_hosts: Annotated[list[str], NoDecode] = []
 
     # --- Sync ------------------------------------------------------------------------------------
+    # In-process loop. Turn it off on hosts that pause idle servers (e.g. Cloud Run) and call
+    # POST /api/internal/sync on a schedule instead.
     background_sync_enabled: bool = True
+    # Shared secret a scheduler sends in X-Sync-Secret to run one sync pass. Empty = the
+    # endpoint is off. Generate: python -c "import secrets; print(secrets.token_urlsafe(48))"
+    sync_trigger_secret: str = ""
     sync_interval_minutes: int = Field(default=90, ge=15)
     # The chatbot refreshes a source first if its data is older than this.
     chat_sync_stale_minutes: int = Field(default=60, ge=5)
@@ -146,6 +151,8 @@ class Settings(BaseSettings):
                 for name in ("secret_key", "token_encryption_key")
                 if len(getattr(self, name)) < 32
             ]
+            if self.sync_trigger_secret and len(self.sync_trigger_secret) < 32:
+                missing.append("sync_trigger_secret")
             if missing:
                 raise ValueError(
                     "In production these settings must be set to long random values: "
